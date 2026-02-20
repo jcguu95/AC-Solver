@@ -15,6 +15,10 @@
 The architecture is a Multi-Layer Perceptron (MLP) dynamically determined by the `nodes_counts` parameter.
 Both Actor and Critic share the same structure for hidden layers but differ in the final output layer.
 
+Definitions:
+- **Input_Dim**: The size of the flattened observation vector. In the AC Solver context, this represents the state of the presentation (the relators). It is calculated as `num_relators * max_relator_length`.
+- **nodes_counts**: A list of integers (hyperparameters) defining the width of the hidden layers. For example, `[64, 64]` means two hidden layers, each with 64 neurons.
+
 Structure defined by `build_network`:
 1. **Input Layer**: Linear(Input_Dim, nodes_counts[0]) followed by Tanh activation.
 2. **Hidden Layers**: For each subsequent layer, Linear(nodes_counts[i], nodes_counts[i+1]) followed by Tanh activation.

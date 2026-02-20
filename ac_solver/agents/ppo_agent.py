@@ -72,11 +72,15 @@ class Agent(nn.Module):
 
         Parameters:
         envs (gym.Env): The environment for which the agent is being created.
+                        The observation space determines the input dimension (Input_Dim).
+                        For ACEnv, this is the flattened vector of relators.
         nodes_counts (list of int): A list where each element represents the number of nodes in a hidden layer.
                                     e.g., [64, 64] creates two hidden layers of size 64.
+                                    These are the "other layers" between input and output.
         """
         super(Agent, self).__init__()
 
+        # Input_Dim: Total number of elements in the observation (e.g., num_relators * max_length)
         input_dim = np.prod(envs.single_observation_space.shape)
         self.critic_nodes = [input_dim] + nodes_counts + [1]
         self.actor_nodes = [input_dim] + nodes_counts + [envs.single_action_space.n]
