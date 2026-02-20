@@ -1,0 +1,58 @@
+#+TITLE: PPO Agent Architecture and SAE Interpretation Analysis
+#+AUTHOR: Gemini
+#+DATE: 2026-02-20
+
+* Neural Network Architecture Analysis
+
+** Fully Connected (FC) Layers
+An FC layer performs an affine transformation followed by a non-linear activation.
+Mathematically: y = sigma(Wx + b).
+- W: Weight matrix.
+- b: Bias vector.
+- Every neuron in layer N connects to every neuron in layer N+1.
+- Provides global feature interaction but lacks the spatial inductive bias of CNNs.
+
+
+
+** Network Topology and Shapes
+The architecture in ac_solver/agents/ppo_agent.py is dynamic based on nodes_counts.
+- Actor: Input_Dim -> [nodes_counts] -> Action_Space_N.
+- Critic: Input_Dim -> [nodes_counts] -> 1.
+- If nodes_counts is [256, 128], the Actor has 2 hidden layers with 256 and 128 neurons respectively.
+
+** Activation Function: Tanh vs ReLU
+The implementation uses nn.Tanh() instead of nn.ReLU().
+- Range: Tanh maps to (-1, 1), beneficial for symmetric action distributions.
+- Smoothness: Tanh is C2 continuous, providing stable second-order gradients for policy optimization.
+- Stability: Avoids the dying ReLU problem where neurons output constant zero.
+
+* Mechanistic Interpretability via SAE
+
+** Feature Steering Logic
+SAE (Sparse Autoencoder) allows for manipulating the solver's intuition.
+1. Map activation f (from 2nd last layer) to sparse feature z: z = ReLU(W_enc * f + b_enc).
+2. Manually perturb a specific feature z_i (e.g., increase its magnitude).
+3. Reconstruct the modified activation f' = W_dec * z' + b_dec.
+4. Pass f' to the Actor Head to observe behavioral shifts.
+
+** Why Target the Actor Network?
+- Actor: Focuses on the policy (decision-making logic).
+- Critic: Focuses on value estimation (state quality assessment).
+- Interpreting the Actor reveals the "why" behind specific moves/actions.
+
+* Implementation and Refactoring Notes
+
+** Refactoring Strategy
+The Actor block should be split to isolate the feature extraction from the decision head.
+- actor_body: Contains linear layers and Tanh activations up to the last hidden layer.
+- actor_head: The final linear layer mapping to action logits.
+
+** Weight Compatibility
+- No retraining is required if the mathematical operations remain identical.
+- Existing weights can be loaded by mapping the state_dict keys.
+- Example: Mapping 'actor.4.weight' to 'actor_head.weight'.
+
+* Typical ML Architecture Alternatives
+- Convolutional (CNN): For spatial/image-based observations.
+- Recurrent (RNN/LSTM): For temporal dependencies and POMDPs.
+- Transformer: For global attention and long-range dependencies.
