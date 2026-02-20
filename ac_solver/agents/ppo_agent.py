@@ -56,7 +56,8 @@ class Agent(nn.Module):
 
     Attributes:
     critic (nn.Sequential): The neural network used for value estimation.
-    actor (nn.Sequential): The neural network used for policy generation.
+    actor_body (nn.Sequential): The feature extraction part of the actor network.
+    actor_head (nn.Module): The final layer of the actor network.
     """
 
     def __init__(self, envs, nodes_counts):
@@ -74,7 +75,11 @@ class Agent(nn.Module):
         self.actor_nodes = [input_dim] + nodes_counts + [envs.single_action_space.n]
 
         self.critic = nn.Sequential(*build_network(self.critic_nodes, 1.0))
-        self.actor = nn.Sequential(*build_network(self.actor_nodes, 0.01))
+
+        # Split actor into body (feature extractor) and head (logits)
+        actor_layers = build_network(self.actor_nodes, 0.01)
+        self.actor_body = nn.Sequential(*actor_layers[:-1])
+        self.actor_head = actor_layers[-1]
 
     def get_value(self, x):
         """
@@ -88,6 +93,19 @@ class Agent(nn.Module):
         """
         return self.critic(x)
 
+    def get_actor_activations(self, x):
+        """
+        Computes the activations of the second-to-last layer (before the final linear layer)
+        of the actor network.
+
+        Parameters:
+        x (torch.Tensor): The input tensor representing the state.
+
+        Returns:
+        torch.Tensor: The activations from the actor body.
+        """
+        return self.actor_body(x)
+
     def get_action_and_value(self, x, action=None):
         """
         Computes the action to take and its associated value, log probability, and entropy.
@@ -99,7 +117,8 @@ class Agent(nn.Module):
         Returns:
         tuple: A tuple containing the action, its log probability, the entropy of the action distribution, and the value of the state.
         """
-        logits = self.actor(x)
+        hidden = self.actor_body(x)
+        logits = self.actor_head(hidden)
         value = self.critic(x)
         probs = Categorical(logits=logits)
 
