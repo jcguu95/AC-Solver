@@ -1,6 +1,5 @@
 #+TITLE: PPO Agent 架構與 SAE 可解釋性分析
-#+AUTHOR: Gemini
-#+DATE: 2026-02-20
+#+AUTHOR: Gemini & Jin-Cheng Guu
 
 * 神經網路架構分析 (Neural Network Architecture Analysis)
 
@@ -14,15 +13,15 @@
 
 ** 網路拓撲與形狀 (Network Topology and Shapes)
 架構是動態的，基於 `nodes_counts` 參數決定。
-- **Actor (行動者)**: 輸入維度 -> [隱藏層節點數] -> 動作空間大小 (Action_Space_N)。
-- **Critic (評論者)**: 輸入維度 -> [隱藏層節點數] -> 1 (價值估計)。
+- Actor (行動者): 輸入維度 -> [隱藏層節點數] -> 動作空間大小 (Action_Space_N)。
+- Critic (評論者): 輸入維度 -> [隱藏層節點數] -> 1 (價值估計)。
 - 例如：若 `nodes_counts` 為 `[64, 64]`，則 Actor 有 2 個隱藏層，每層 64 個神經元。
 
 ** 激活函數：Tanh vs ReLU
 實作中使用 `nn.Tanh()` 而非 `nn.ReLU()`。
-- **範圍**：Tanh 映射至 (-1, 1)，有助於對稱的動作分佈。
-- **平滑度**：Tanh 是 $C^2$ 連續的，為策略優化提供穩定的二階梯度。
-- **穩定性**：避免了神經元輸出恆為零的 "Dying ReLU" 問題。
+- 範圍：Tanh 映射至 (-1, 1)，有助於對稱的動作分佈。
+- 平滑度：Tanh 是 $C^2$ 連續的，為策略優化提供穩定的二階梯度。
+- 穩定性：避免了神經元輸出恆為零的 "Dying ReLU" 問題。
 
 * 透過 SAE 進行機械可解釋性 (Mechanistic Interpretability via SAE)
 
@@ -35,8 +34,8 @@ SAE (稀疏自動編碼器) 允許我們操縱求解器的直覺。
 5. 將 $f'$ 傳入 Actor Head (`actor_head`) 以觀察行為變化。
 
 ** 為何針對 Actor 網路？
-- **Actor**：專注於策略 (決策邏輯)。
-- **Critic**：專注於價值估計 (狀態品質評估)。
+- Actor：專注於策略 (決策邏輯)。
+- Critic：專注於價值估計 (狀態品質評估)。
 - 解釋 Actor 可以揭示特定移動/動作背後的「原因」。
 
 * 實作與重構筆記 (Implementation and Refactoring Notes)
@@ -52,6 +51,6 @@ SAE (稀疏自動編碼器) 允許我們操縱求解器的直覺。
 - 例如：將原本的 `actor.layer_idx.weight` 映射到 `actor_body.layer_idx.weight` 或 `actor_head.weight`。
 
 ** 常見 ML 架構替代方案
-- **卷積神經網路 (CNN)**：適用於空間/圖像基礎的觀察 (此專案未使用)。
-- **遞歸神經網路 (RNN/LSTM)**：適用於時間依賴性和 POMDPs。
-- **Transformer**：適用於全域注意力機制和長距離依賴。
+- 卷積神經網路 (CNN)：適用於空間/圖像基礎的觀察 (此專案未使用)。
+- 遞歸神經網路 (RNN/LSTM)：適用於時間依賴性和 POMDPs。
+- Transformer：適用於全域注意力機制和長距離依賴。
