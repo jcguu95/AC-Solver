@@ -1,58 +1,57 @@
-#+TITLE: PPO Agent Architecture and SAE Interpretation Analysis
+#+TITLE: PPO Agent 架構與 SAE 可解釋性分析
 #+AUTHOR: Gemini
 #+DATE: 2026-02-20
 
-* Neural Network Architecture Analysis
+* 神經網路架構分析 (Neural Network Architecture Analysis)
 
-** Fully Connected (FC) Layers
-An FC layer performs an affine transformation followed by a non-linear activation.
-Mathematically: y = sigma(Wx + b).
-- W: Weight matrix.
-- b: Bias vector.
-- Every neuron in layer N connects to every neuron in layer N+1.
-- Provides global feature interaction but lacks the spatial inductive bias of CNNs.
+** 全連接層 (Fully Connected Layers)
+此專案 (`ac_solver/agents/ppo_agent.py`) 使用全連接層 (`nn.Linear`)。
+數學公式：$y = \sigma(Wx + b)$。
+- $W$: 權重矩陣 (Weight matrix)。
+- $b$: 偏差向量 (Bias vector)。
+- 第 $N$ 層的每個神經元都與第 $N+1$ 層的每個神經元相連。
+- 初始化：使用正交初始化 (Orthogonal Initialization)，隱藏層標準差為 $\sqrt{2}$。
 
+** 網路拓撲與形狀 (Network Topology and Shapes)
+架構是動態的，基於 `nodes_counts` 參數決定。
+- **Actor (行動者)**: 輸入維度 -> [隱藏層節點數] -> 動作空間大小 (Action_Space_N)。
+- **Critic (評論者)**: 輸入維度 -> [隱藏層節點數] -> 1 (價值估計)。
+- 例如：若 `nodes_counts` 為 `[64, 64]`，則 Actor 有 2 個隱藏層，每層 64 個神經元。
 
+** 激活函數：Tanh vs ReLU
+實作中使用 `nn.Tanh()` 而非 `nn.ReLU()`。
+- **範圍**：Tanh 映射至 (-1, 1)，有助於對稱的動作分佈。
+- **平滑度**：Tanh 是 $C^2$ 連續的，為策略優化提供穩定的二階梯度。
+- **穩定性**：避免了神經元輸出恆為零的 "Dying ReLU" 問題。
 
-** Network Topology and Shapes
-The architecture in ac_solver/agents/ppo_agent.py is dynamic based on nodes_counts.
-- Actor: Input_Dim -> [nodes_counts] -> Action_Space_N.
-- Critic: Input_Dim -> [nodes_counts] -> 1.
-- If nodes_counts is [256, 128], the Actor has 2 hidden layers with 256 and 128 neurons respectively.
+* 透過 SAE 進行機械可解釋性 (Mechanistic Interpretability via SAE)
 
-** Activation Function: Tanh vs ReLU
-The implementation uses nn.Tanh() instead of nn.ReLU().
-- Range: Tanh maps to (-1, 1), beneficial for symmetric action distributions.
-- Smoothness: Tanh is C2 continuous, providing stable second-order gradients for policy optimization.
-- Stability: Avoids the dying ReLU problem where neurons output constant zero.
+** 特徵操縱邏輯 (Feature Steering Logic)
+SAE (稀疏自動編碼器) 允許我們操縱求解器的直覺。
+1. 從倒數第二層 (即 `actor_body` 的輸出) 提取激活值 $f$。
+2. 將 $f$ 映射到稀疏特徵 $z$：$z = \text{ReLU}(W_{enc} \cdot f + b_{enc})$。
+3. 手動擾動特定特徵 $z_i$ (例如：增加其強度)。
+4. 重建修改後的激活值 $f' = W_{dec} \cdot z' + b_{dec}$。
+5. 將 $f'$ 傳入 Actor Head (`actor_head`) 以觀察行為變化。
 
-* Mechanistic Interpretability via SAE
+** 為何針對 Actor 網路？
+- **Actor**：專注於策略 (決策邏輯)。
+- **Critic**：專注於價值估計 (狀態品質評估)。
+- 解釋 Actor 可以揭示特定移動/動作背後的「原因」。
 
-** Feature Steering Logic
-SAE (Sparse Autoencoder) allows for manipulating the solver's intuition.
-1. Map activation f (from 2nd last layer) to sparse feature z: z = ReLU(W_enc * f + b_enc).
-2. Manually perturb a specific feature z_i (e.g., increase its magnitude).
-3. Reconstruct the modified activation f' = W_dec * z' + b_dec.
-4. Pass f' to the Actor Head to observe behavioral shifts.
+* 實作與重構筆記 (Implementation and Refactoring Notes)
 
-** Why Target the Actor Network?
-- Actor: Focuses on the policy (decision-making logic).
-- Critic: Focuses on value estimation (state quality assessment).
-- Interpreting the Actor reveals the "why" behind specific moves/actions.
+** 重構策略 (Refactoring Strategy)
+目前的程式碼 (`ac_solver/agents/ppo_agent.py`) 已經將 Actor 區塊拆分，以隔離特徵提取與決策頭：
+- `actor_body`：包含線性層和 Tanh 激活函數，直到最後一個隱藏層。這就是我們要提取 SAE 訓練數據的地方。
+- `actor_head`：最後一個線性層，將特徵映射到動作 logits。
+- 新增了 `get_actor_activations(x)` 方法來方便提取。
 
-* Implementation and Refactoring Notes
+** 權重兼容性 (Weight Compatibility)
+- 如果載入舊的檢查點 (checkpoint)，需要映射 `state_dict` 的鍵值。
+- 例如：將原本的 `actor.layer_idx.weight` 映射到 `actor_body.layer_idx.weight` 或 `actor_head.weight`。
 
-** Refactoring Strategy
-The Actor block should be split to isolate the feature extraction from the decision head.
-- actor_body: Contains linear layers and Tanh activations up to the last hidden layer.
-- actor_head: The final linear layer mapping to action logits.
-
-** Weight Compatibility
-- No retraining is required if the mathematical operations remain identical.
-- Existing weights can be loaded by mapping the state_dict keys.
-- Example: Mapping 'actor.4.weight' to 'actor_head.weight'.
-
-* Typical ML Architecture Alternatives
-- Convolutional (CNN): For spatial/image-based observations.
-- Recurrent (RNN/LSTM): For temporal dependencies and POMDPs.
-- Transformer: For global attention and long-range dependencies.
+** 常見 ML 架構替代方案
+- **卷積神經網路 (CNN)**：適用於空間/圖像基礎的觀察 (此專案未使用)。
+- **遞歸神經網路 (RNN/LSTM)**：適用於時間依賴性和 POMDPs。
+- **Transformer**：適用於全域注意力機制和長距離依賴。
