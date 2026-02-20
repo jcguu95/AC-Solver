@@ -12,10 +12,20 @@
 - 初始化：使用正交初始化 (Orthogonal Initialization)，隱藏層標準差為 $\sqrt{2}$。
 
 ** 網路拓撲與形狀 (Network Topology and Shapes)
-架構是動態的，基於 `nodes_counts` 參數決定。
-- Actor (行動者): 輸入維度 -> [隱藏層節點數] -> 動作空間大小 (Action_Space_N)。
-- Critic (評論者): 輸入維度 -> [隱藏層節點數] -> 1 (價值估計)。
-- 例如：若 `nodes_counts` 為 `[64, 64]`，則 Actor 有 2 個隱藏層，每層 64 個神經元。
+The architecture is a Multi-Layer Perceptron (MLP) dynamically determined by the `nodes_counts` parameter.
+Both Actor and Critic share the same structure for hidden layers but differ in the final output layer.
+
+Structure defined by `build_network`:
+1. **Input Layer**: Linear(Input_Dim, nodes_counts[0]) followed by Tanh activation.
+2. **Hidden Layers**: For each subsequent layer, Linear(nodes_counts[i], nodes_counts[i+1]) followed by Tanh activation.
+3. **Output Layer**:
+   - **Critic**: Linear(nodes_counts[-1], 1). Outputs scalar value $V(s)$.
+   - **Actor**: Linear(nodes_counts[-1], Action_Space_Size). Outputs action logits.
+
+Example: If `nodes_counts` (hidden sizes) is `[64, 64]`:
+- Layer 1: Linear(Input, 64) -> Tanh
+- Layer 2: Linear(64, 64) -> Tanh
+- Layer 3: Linear(64, Output)
 
 ** 激活函數：Tanh vs ReLU
 實作中使用 `nn.Tanh()` 而非 `nn.ReLU()`。

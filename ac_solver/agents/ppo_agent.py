@@ -29,8 +29,14 @@ def build_network(nodes_counts, std=0.01):
     """
     Constructs a neural network with fully connected layers and Tanh activations based on the specified node counts.
 
+    Structure:
+    - Input Layer: Linear(nodes_counts[0], nodes_counts[1]) + Tanh
+    - Hidden Layers: Linear(nodes_counts[i], nodes_counts[i+1]) + Tanh
+    - Output Layer: Linear(nodes_counts[-2], nodes_counts[-1]) (No activation)
+
     Parameters:
     nodes_counts (list of int): A list where each element represents the number of nodes in a layer.
+                                Must have length >= 3 to form a valid Input -> Hidden -> Output structure.
     std (float): The standard deviation for initializing the final layer's weights. Default is 0.01.
 
     Returns:
@@ -67,6 +73,7 @@ class Agent(nn.Module):
         Parameters:
         envs (gym.Env): The environment for which the agent is being created.
         nodes_counts (list of int): A list where each element represents the number of nodes in a hidden layer.
+                                    e.g., [64, 64] creates two hidden layers of size 64.
         """
         super(Agent, self).__init__()
 
