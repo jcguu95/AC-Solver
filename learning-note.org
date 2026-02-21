@@ -1,91 +1,91 @@
-#+TITLE: PPO Agent Architecture & SAE Interpretability Analysis
+#+TITLE: PPO 代理架構與 SAE 可解釋性分析
 #+AUTHOR: Gemini & Jin-Cheng Guu
 
-* Neural Network Architecture Analysis (ac_solver/agents/ppo_agent.py)
+* 神經網路架構分析 (ac_solver/agents/ppo_agent.py)
 
-** Fully Connected Layers (MLP)
-The project uses Multi-Layer Perceptrons (MLPs) defined in `ac_solver/agents/ppo_agent.py`.
-- **Initialization**: Orthogonal Initialization (`std=sqrt(2)` for hidden, `0.01` for actor head, `1.0` for critic head) with constant bias `0.0`.
-- **Activation**: `nn.Tanh()` is used for hidden layers.
+** 全連接層 (MLP)
+本專案使用定義於 `ac_solver/agents/ppo_agent.py` 中的多層感知器 (MLPs)。
+- **初始化**：正交初始化 (Orthogonal Initialization)（隱藏層 `std=sqrt(2)`，Actor head `0.01`，Critic head `1.0`），偏差 (bias) 常數設為 `0.0`。
+- **激活函數**：隱藏層使用 `nn.Tanh()`。
 
-** Network Topology
-The architecture is dynamically determined by the `nodes_counts` argument (default: `[256, 256]`).
-- **Input_Dim**: Flattened observation vector size (`num_relators * max_relator_length`).
-- **Hidden Layers**: Defined by `nodes_counts`.
-- **Output**:
-  - **Critic**: Outputs a scalar value $V(s)$.
-  - **Actor**: Outputs logits for the action space (size 12).
+** 網路拓撲
+架構由 `nodes_counts` 參數動態決定（預設值：`[256, 256]`）。
+- **輸入維度**：扁平化的觀察向量大小 (`num_relators * max_relator_length`)。
+- **隱藏層**：由 `nodes_counts` 定義。
+- **輸出**：
+  - **Critic**：輸出純量值 $V(s)$。
+  - **Actor**：輸出動作空間的 logits（大小為 12）。
 
-** Implementation Details (`Agent` class)
-- **Critic**: `nn.Sequential` constructed via `build_network`.
-- **Actor**: Split into two parts to facilitate interpretability:
-  - `actor_body`: Feature extractor (Input -> Hidden Layers -> Tanh).
-  - `actor_head`: Final linear layer (Hidden -> Logits).
+** 實作細節 (`Agent` 類別)
+- **Critic**：透過 `build_network` 建構的 `nn.Sequential`。
+- **Actor**：為了促進可解釋性，分為兩部分：
+  - `actor_body`：特徵提取器 (輸入 -> 隱藏層 -> Tanh)。
+  - `actor_head`：最終線性層 (隱藏層 -> Logits)。
 
-* PPO Training & Algorithm Details (ac_solver/agents/)
+* PPO 訓練與演算法細節 (ac_solver/agents/)
 
-** Training Loop (`training.py`)
-The `ppo_training_loop` implements the Proximal Policy Optimization algorithm.
-- **Rollout**: Collects `num_steps` of data across `num_envs` parallel environments.
-- **Advantage Estimation**: Uses Generalized Advantage Estimation (GAE).
-- **Optimization**:
-  - **Policy Loss**: Supports both **Clipped Surrogate Objective** (`is_loss_clip=True`) and **KL-Penalty** (`is_loss_clip=False`).
-  - **Value Loss**: Mean Squared Error, optionally clipped (`clip_vloss`).
-  - **Entropy Bonus**: Encourages exploration.
+** 訓練迴圈 (`training.py`)
+`ppo_training_loop` 實作了近端策略優化 (Proximal Policy Optimization) 演算法。
+- **Rollout**：在 `num_envs` 個平行環境中收集 `num_steps` 的數據。
+- **優勢估計**：使用廣義優勢估計 (Generalized Advantage Estimation, GAE)。
+- **優化**：
+  - **策略損失 (Policy Loss)**：支援 **Clipped Surrogate Objective** (`is_loss_clip=True`) 和 **KL-Penalty** (`is_loss_clip=False`)。
+  - **價值損失 (Value Loss)**：均方誤差 (Mean Squared Error)，可選擇是否截斷 (`clip_vloss`)。
+  - **熵獎勵 (Entropy Bonus)**：鼓勵探索。
 
-** Learning Rate Schedule
-Implemented in `get_curr_lr` (`training.py`):
-- Supports **Linear** and **Cosine** decay.
-- Includes a **Warmup Period** (`warmup_period`) where LR increases linearly from 0.
-- Can anneal to a fraction of the max LR (`min_lr_frac`).
+** 學習率排程
+實作於 `get_curr_lr` (`training.py`)：
+- 支援 **線性 (Linear)** 和 **餘弦 (Cosine)** 衰減。
+- 包含 **暖身期 (Warmup Period)** (`warmup_period`)，在此期間 LR 從 0 線性增加。
+- 可以退火至最大 LR 的一部分 (`min_lr_frac`)。
 
-** Curriculum & State Management
-The agent does not train on a single static environment but a set of presentations.
-- **Initialization**: `get_env` (`environment.py`) loads initial states from text files (solved or all).
-- **State Selection Logic** (`training.py`):
-  1. **Round 1**: Iterates through all loaded initial states at least once.
-  2. **Subsequent Rounds**: Probabilistically selects between:
-     - **Unsolved States**: To encourage solving new problems.
-     - **Solved States**: To prevent catastrophic forgetting (controlled by `repeat_solved_prob`).
-- **Success Recording**: Tracks solved/unsolved states and the history of moves (`ACMoves_hist`).
+** 課程與狀態管理
+代理並非在單一靜態環境上訓練，而是在一組 presentation 上訓練。
+- **初始化**：`get_env` (`environment.py`) 從文字檔案載入初始狀態（已解決或全部）。
+- **狀態選擇邏輯** (`training.py`)：
+  1. **第一輪**：至少遍歷所有載入的初始狀態一次。
+  2. **後續輪次**：機率性地選擇：
+     - **未解決狀態**：鼓勵解決新問題。
+     - **已解決狀態**：防止災難性遺忘（由 `repeat_solved_prob` 控制）。
+- **成功記錄**：追蹤已解決/未解決的狀態以及移動歷史 (`ACMoves_hist`)。
 
-* Mechanistic Interpretability via SAE
+* 透過 SAE 進行機械可解釋性分析
 
-** Feature Steering Logic
-SAE (Sparse Autoencoder) allows steering the solver's intuition.
-1. Extract activations $f$ from `actor_body` using `agent.get_actor_activations(x)`.
-2. Map $f$ to sparse features $z$.
-3. Perturb specific features $z_i$.
-4. Reconstruct $f'$ and pass to `actor_head`.
+** 特徵引導邏輯 (Feature Steering Logic)
+SAE (稀疏自動編碼器) 允許引導求解器的直覺。
+1. 使用 `agent.get_actor_activations(x)` 從 `actor_body` 提取激活值 $f$。
+2. 將 $f$ 映射到稀疏特徵 $z$。
+3. 擾動特定特徵 $z_i$。
+4. 重建 $f'$ 並傳遞給 `actor_head`。
 
-** Why Target the Actor?
-- The Actor determines the policy. Interpreting it reveals the "reasoning" behind specific moves.
-- The split architecture (`body` vs `head`) in `ppo_agent.py` is specifically designed for this.
+** 為何針對 Actor？
+- Actor 決定策略。解釋它能揭示特定移動背後的「推理」。
+- `ppo_agent.py` 中的分離架構 (`body` vs `head`) 專為此設計。
 
-* Environment Implementation Details (ac_solver/envs & agents/environment.py)
+* 環境實作細節 (ac_solver/envs & agents/environment.py)
 
-** Core Environment (`ac_env.py`)
-- **State**: Box space, flattened array of relators.
-- **Action**: Discrete(12), representing AC moves.
-- **Reward**: Step penalty + large sparse reward for solving.
+** 核心環境 (`ac_env.py`)
+- **狀態**：Box 空間，扁平化的 relator 陣列。
+- **動作**：Discrete(12)，代表 AC 移動。
+- **獎勵**：步數懲罰 + 解決時的大型稀疏獎勵。
 
-** Wrappers & Vectorization (`agents/environment.py`)
-- **Vectorization**: Uses `gym.vector.SyncVectorEnv` to run `num_envs` in parallel.
-- **Wrappers**:
-  - `NormalizeReward`: Normalizes rewards using running mean/std (optional).
-  - `TransformReward`: Clips rewards to a specified range (optional).
-- **Configuration**: `make_env` helper function configures the environment based on arguments.
+** 包裝器與向量化 (`agents/environment.py`)
+- **向量化**：使用 `gym.vector.SyncVectorEnv` 平行執行 `num_envs`。
+- **包裝器**：
+  - `NormalizeReward`：使用運行均值/標準差標準化獎勵（可選）。
+  - `TransformReward`：將獎勵截斷至指定範圍（可選）。
+- **配置**：`make_env` 輔助函式根據參數配置環境。
 
-* Search Algorithms Analysis (ac_solver/search/)
+* 搜尋演算法分析 (ac_solver/search/)
 
-** Search Space Challenges
-- Branching factor of 12 leads to exponential growth ($12^d$).
-- Practical search depth is limited to 3-5 steps.
+** 搜尋空間挑戰
+- 分支因子為 12 導致指數增長 ($12^d$)。
+- 實際搜尋深度限制在 3-5 步。
 
-** Algorithms
-- **BFS**: Guarantees shortest path but limited by memory/time.
-- **Greedy (Best-First)**: Uses heuristic (length) to find solutions deeper in the tree, but no optimality guarantee.
+** 演算法
+- **BFS**：保證最短路徑，但受限於記憶體/時間。
+- **Greedy (Best-First)**：使用啟發式（長度）在樹的更深處尋找解，但不保證最佳性。
 
-* Miller-Schupp Series
-- Hard instances used for testing.
-- Generated via `miller_schupp.py`.
+* Miller-Schupp 系列
+- 用於測試的困難實例。
+- 透過 `miller_schupp.py` 生成。
