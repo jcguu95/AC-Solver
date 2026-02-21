@@ -68,3 +68,34 @@ SAE (稀疏自動編碼器) 允許我們操縱求解器的直覺。
 - 卷積神經網路 (CNN)：適用於空間/圖像基礎的觀察 (此專案未使用)。
 - 遞歸神經網路 (RNN/LSTM)：適用於時間依賴性和 POMDPs。
 - Transformer：適用於全域注意力機制和長距離依賴。
+
+* 環境實作細節 (Environment Implementation Details - `ac_solver/envs`)
+
+此資料夾包含 Andrews-Curtis 猜想的強化學習環境實作，主要由三個檔案組成。
+
+** `ac_env.py`: Gymnasium 環境定義
+- **類別**: `ACEnv` (繼承自 `gymnasium.Env`)。
+- **狀態 (State)**: 使用 `Box` 空間。
+  - 表現形式：一個長度為 `2 * max_relator_length` 的一維 NumPy 陣列 (`int8`)。
+  - 內容：包含兩個 Relators，使用 0 進行右側填充 (padding)。
+  - 編碼：1, 2 代表生成元 $x, y$；-1, -2 代表 $x^{-1}, y^{-1}$。
+- **動作 (Action)**: `Discrete(12)`，對應 12 種基本 AC 移動。
+- **獎勵 (Reward)**:
+  - 稀疏獎勵與密集獎勵的混合。
+  - 每一步扣除當前 Relator 總長度 (鼓勵縮短)。
+  - 成功解出 (總長度為 2) 時給予巨大獎勵 `max_reward`。
+
+** `ac_moves.py`: 移動邏輯核心
+- 定義了 12 種 AC 移動的具體操作。
+- **主要函數**: `ACMove(move_id, presentation, ...)`。
+- **移動類型**:
+  - **相乘 (Product/Concatenation)**: $r_i \leftarrow r_i r_j^{\pm 1}$。
+  - **共軛 (Conjugation)**: $r_i \leftarrow g^{\pm 1} r_i g^{\mp 1}$。
+- 實作細節：移動後會自動呼叫 `simplify_presentation` 進行縮減。
+
+** `utils.py`: 輔助工具
+- **驗證**: `is_array_valid_presentation` 確保狀態格式正確 (偶數長度、正確填充)。
+- **縮減 (Reduction)**:
+  - `simplify_relator`: 移除相鄰的互逆元素 (如 $x x^{-1} \to \epsilon$)。
+  - 支援 **Cyclical Reduction** (循環縮減)，即移除首尾互逆元素 (對應於共軛操作的簡化)。
+- **目標狀態**: `generate_trivial_states` 產生所有可能的 Trivial Presentations (如 $\langle x, y \rangle$ 及其變體)。
