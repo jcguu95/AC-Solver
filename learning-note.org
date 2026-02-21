@@ -1,159 +1,91 @@
-#+TITLE: PPO Agent 架構與 SAE 可解釋性分析
+#+TITLE: PPO Agent Architecture & SAE Interpretability Analysis
 #+AUTHOR: Gemini & Jin-Cheng Guu
 
-* 神經網路架構分析 (Neural Network Architecture Analysis)
+* Neural Network Architecture Analysis (ac_solver/agents/ppo_agent.py)
 
-** 全連接層 (Fully Connected Layers)
-此專案 (`ac_solver/agents/ppo_agent.py`) 使用全連接層 (`nn.Linear`)。
-數學公式：$y = \sigma(Wx + b)$。
-- $W$: 權重矩陣 (Weight matrix)。
-- $b$: 偏差向量 (Bias vector)。
-- 第 $N$ 層的每個神經元都與第 $N+1$ 層的每個神經元相連。
-- 初始化：使用正交初始化 (Orthogonal Initialization)，隱藏層標準差為 $\sqrt{2}$。
+** Fully Connected Layers (MLP)
+The project uses Multi-Layer Perceptrons (MLPs) defined in `ac_solver/agents/ppo_agent.py`.
+- **Initialization**: Orthogonal Initialization (`std=sqrt(2)` for hidden, `0.01` for actor head, `1.0` for critic head) with constant bias `0.0`.
+- **Activation**: `nn.Tanh()` is used for hidden layers.
 
-** 網路拓撲與形狀 (Network Topology and Shapes)
-The architecture is a Multi-Layer Perceptron (MLP) dynamically determined by the `nodes_counts` parameter.
-Both Actor and Critic share the same structure for hidden layers but differ in the final output layer.
+** Network Topology
+The architecture is dynamically determined by the `nodes_counts` argument (default: `[256, 256]`).
+- **Input_Dim**: Flattened observation vector size (`num_relators * max_relator_length`).
+- **Hidden Layers**: Defined by `nodes_counts`.
+- **Output**:
+  - **Critic**: Outputs a scalar value $V(s)$.
+  - **Actor**: Outputs logits for the action space (size 12).
 
-Definitions:
-- **Input_Dim**: The size of the flattened observation vector. In the AC Solver context, this represents the state of the presentation (the relators). It is calculated as `num_relators * max_relator_length`.
-- **nodes_counts**: A list of integers (hyperparameters) defining the width of the hidden layers. For example, `[64, 64]` means two hidden layers, each with 64 neurons.
+** Implementation Details (`Agent` class)
+- **Critic**: `nn.Sequential` constructed via `build_network`.
+- **Actor**: Split into two parts to facilitate interpretability:
+  - `actor_body`: Feature extractor (Input -> Hidden Layers -> Tanh).
+  - `actor_head`: Final linear layer (Hidden -> Logits).
 
-Structure defined by `build_network`:
-1. **Input Layer**: Linear(Input_Dim, nodes_counts[0]) followed by Tanh activation.
-2. **Hidden Layers**: For each subsequent layer, Linear(nodes_counts[i], nodes_counts[i+1]) followed by Tanh activation.
-3. **Output Layer**:
-   - **Critic**: Linear(nodes_counts[-1], 1). Outputs scalar value $V(s)$.
-   - **Actor**: Linear(nodes_counts[-1], Action_Space_Size). Outputs action logits.
+* PPO Training & Algorithm Details (ac_solver/agents/)
 
-Example: If `nodes_counts` (hidden sizes) is `[64, 64]`:
-- Layer 1: Linear(Input, 64) -> Tanh
-- Layer 2: Linear(64, 64) -> Tanh
-- Layer 3: Linear(64, Output)
+** Training Loop (`training.py`)
+The `ppo_training_loop` implements the Proximal Policy Optimization algorithm.
+- **Rollout**: Collects `num_steps` of data across `num_envs` parallel environments.
+- **Advantage Estimation**: Uses Generalized Advantage Estimation (GAE).
+- **Optimization**:
+  - **Policy Loss**: Supports both **Clipped Surrogate Objective** (`is_loss_clip=True`) and **KL-Penalty** (`is_loss_clip=False`).
+  - **Value Loss**: Mean Squared Error, optionally clipped (`clip_vloss`).
+  - **Entropy Bonus**: Encourages exploration.
 
-** 激活函數：Tanh vs ReLU
-實作中使用 `nn.Tanh()` 而非 `nn.ReLU()`。
-- 範圍：Tanh 映射至 (-1, 1)，有助於對稱的動作分佈。
-- 平滑度：Tanh 是 $C^2$ 連續的，為策略優化提供穩定的二階梯度。
-- 穩定性：避免了神經元輸出恆為零的 "Dying ReLU" 問題。
+** Learning Rate Schedule
+Implemented in `get_curr_lr` (`training.py`):
+- Supports **Linear** and **Cosine** decay.
+- Includes a **Warmup Period** (`warmup_period`) where LR increases linearly from 0.
+- Can anneal to a fraction of the max LR (`min_lr_frac`).
 
-* 透過 SAE 進行機械可解釋性 (Mechanistic Interpretability via SAE)
+** Curriculum & State Management
+The agent does not train on a single static environment but a set of presentations.
+- **Initialization**: `get_env` (`environment.py`) loads initial states from text files (solved or all).
+- **State Selection Logic** (`training.py`):
+  1. **Round 1**: Iterates through all loaded initial states at least once.
+  2. **Subsequent Rounds**: Probabilistically selects between:
+     - **Unsolved States**: To encourage solving new problems.
+     - **Solved States**: To prevent catastrophic forgetting (controlled by `repeat_solved_prob`).
+- **Success Recording**: Tracks solved/unsolved states and the history of moves (`ACMoves_hist`).
 
-** 特徵操縱邏輯 (Feature Steering Logic)
-SAE (稀疏自動編碼器) 允許我們操縱求解器的直覺。
-1. 從倒數第二層 (即 `actor_body` 的輸出) 提取激活值 $f$。
-2. 將 $f$ 映射到稀疏特徵 $z$：$z = \text{ReLU}(W_{enc} \cdot f + b_{enc})$。
-3. 手動擾動特定特徵 $z_i$ (例如：增加其強度)。
-4. 重建修改後的激活值 $f' = W_{dec} \cdot z' + b_{dec}$。
-5. 將 $f'$ 傳入 Actor Head (`actor_head`) 以觀察行為變化。
+* Mechanistic Interpretability via SAE
 
-** 為何針對 Actor 網路？
-- Actor：專注於策略 (決策邏輯)。
-- Critic：專注於價值估計 (狀態品質評估)。
-- 解釋 Actor 可以揭示特定移動/動作背後的「原因」。
+** Feature Steering Logic
+SAE (Sparse Autoencoder) allows steering the solver's intuition.
+1. Extract activations $f$ from `actor_body` using `agent.get_actor_activations(x)`.
+2. Map $f$ to sparse features $z$.
+3. Perturb specific features $z_i$.
+4. Reconstruct $f'$ and pass to `actor_head`.
 
-* 實作與重構筆記 (Implementation and Refactoring Notes)
+** Why Target the Actor?
+- The Actor determines the policy. Interpreting it reveals the "reasoning" behind specific moves.
+- The split architecture (`body` vs `head`) in `ppo_agent.py` is specifically designed for this.
 
-** 重構策略 (Refactoring Strategy)
-目前的程式碼 (`ac_solver/agents/ppo_agent.py`) 已經將 Actor 區塊拆分，以隔離特徵提取與決策頭：
-- `actor_body`：包含線性層和 Tanh 激活函數，直到最後一個隱藏層。這就是我們要提取 SAE 訓練數據的地方。
-- `actor_head`：最後一個線性層，將特徵映射到動作 logits。
-- 新增了 `get_actor_activations(x)` 方法來方便提取。
+* Environment Implementation Details (ac_solver/envs & agents/environment.py)
 
-** 權重兼容性 (Weight Compatibility)
-- 如果載入舊的檢查點 (checkpoint)，需要映射 `state_dict` 的鍵值。
-- 例如：將原本的 `actor.layer_idx.weight` 映射到 `actor_body.layer_idx.weight` 或 `actor_head.weight`。
+** Core Environment (`ac_env.py`)
+- **State**: Box space, flattened array of relators.
+- **Action**: Discrete(12), representing AC moves.
+- **Reward**: Step penalty + large sparse reward for solving.
 
-** 常見 ML 架構替代方案
-- 卷積神經網路 (CNN)：適用於空間/圖像基礎的觀察 (此專案未使用)。
-- 遞歸神經網路 (RNN/LSTM)：適用於時間依賴性和 POMDPs。
-- Transformer：適用於全域注意力機制和長距離依賴。
+** Wrappers & Vectorization (`agents/environment.py`)
+- **Vectorization**: Uses `gym.vector.SyncVectorEnv` to run `num_envs` in parallel.
+- **Wrappers**:
+  - `NormalizeReward`: Normalizes rewards using running mean/std (optional).
+  - `TransformReward`: Clips rewards to a specified range (optional).
+- **Configuration**: `make_env` helper function configures the environment based on arguments.
 
-* 環境實作細節 (Environment Implementation Details - `ac_solver/envs`)
+* Search Algorithms Analysis (ac_solver/search/)
 
-此資料夾包含 Andrews-Curtis 猜想的強化學習環境實作，主要由三個檔案組成。
+** Search Space Challenges
+- Branching factor of 12 leads to exponential growth ($12^d$).
+- Practical search depth is limited to 3-5 steps.
 
-** `ac_env.py`: Gymnasium 環境定義
-- **類別**: `ACEnv` (繼承自 `gymnasium.Env`)。
-- **狀態 (State)**: 使用 `Box` 空間。
-  - 表現形式：一個長度為 `2 * max_relator_length` 的一維 NumPy 陣列 (`int8`)。
-  - 內容：包含兩個 Relators，使用 0 進行右側填充 (padding)。
-  - 編碼：1, 2 代表生成元 $x, y$；-1, -2 代表 $x^{-1}, y^{-1}$。
-- **動作 (Action)**: `Discrete(12)`，對應 12 種基本 AC 移動。
-- **獎勵 (Reward)**:
-  - 稀疏獎勵與密集獎勵的混合。
-  - 每一步扣除當前 Relator 總長度 (鼓勵縮短)。
-  - 成功解出 (總長度為 2) 時給予巨大獎勵 `max_reward`。
+** Algorithms
+- **BFS**: Guarantees shortest path but limited by memory/time.
+- **Greedy (Best-First)**: Uses heuristic (length) to find solutions deeper in the tree, but no optimality guarantee.
 
-** `ac_moves.py`: 移動邏輯核心
-- 定義了 12 種 AC 移動的具體操作。
-- **主要函數**: `ACMove(move_id, presentation, ...)`。
-- **移動類型**:
-  - **相乘 (Product/Concatenation)**: $r_i \leftarrow r_i r_j^{\pm 1}$。
-  - **共軛 (Conjugation)**: $r_i \leftarrow g^{\pm 1} r_i g^{\mp 1}$。
-- 實作細節：移動後會自動呼叫 `simplify_presentation` 進行縮減。
-
-** `utils.py`: 輔助工具
-- **驗證**: `is_array_valid_presentation` 確保狀態格式正確 (偶數長度、正確填充)。
-- **縮減 (Reduction)**:
-  - `simplify_relator`: 移除相鄰的互逆元素 (如 $x x^{-1} \to \epsilon$)。
-  - 支援 **Cyclical Reduction** (循環縮減)，即移除首尾互逆元素 (對應於共軛操作的簡化)。
-- **目標狀態**: `generate_trivial_states` 產生所有可能的 Trivial Presentations (如 $\langle x, y \rangle$ 及其變體)。
-
-* 搜尋演算法分析 (Search Algorithms Analysis)
-
-本專案包含兩種傳統的圖搜尋演算法，用於在不使用強化學習的情況下尋找 AC 猜想的解。
-
-** 搜尋空間的挑戰 (The Challenge of Search Space)
-- **分支因子 (Branching Factor)**: 每一步有 12 種可能的移動 (AC moves)。
-- **指數成長**: 搜尋空間隨深度呈指數成長 ($12^d$)。
-  - 深度 1: 12 個狀態。
-  - 深度 3: $12^3 = 1,728$ 個狀態。
-  - 深度 4: $12^4 = 20,736$ 個狀態。
-  - 深度 5: $12^5 \approx 25$ 萬個狀態。
-  - 深度 10: $12^{10} \approx 619$ 億個狀態。
-- **實務限制**: 程式碼中的預設限制為 `max_nodes_to_explore=10000`。
-  - 這意味著在預設情況下，BFS 甚至無法完整搜尋 **深度 4** (需要 >20k 節點)。
-  - 實際上，搜尋深度僅限於 **3 到 4 步**。
-
-** 廣度優先搜尋 (Breadth-First Search, BFS)
-- **檔案**: `ac_solver/search/breadth_first.py`
-- **機制**: 使用 FIFO (先進先出) 佇列 (`collections.deque`)。
-- **流程**:
-  1. 將初始狀態放入佇列。
-  2. 依序取出狀態，展開所有 12 種可能的 AC 移動。
-  3. 將新發現且未重複的狀態加入佇列尾端。
-- **特性**:
-  - **最短路徑保證**: 若在搜尋限制內存在解，BFS 保證找到移動步數最少的解。
-  - **層級遍歷**: 徹底搜尋深度 $d$ 的所有狀態後，才會進入深度 $d+1$。
-  - **限制**: 由於指數成長，BFS 只能解決非常淺層的問題 (例如 5-7 步以內)。
-
-** 貪婪搜尋 (Greedy Search / Best-First Search)
-- **檔案**: `ac_solver/search/greedy.py`
-- **機制**: 使用優先佇列 (Priority Queue, Min-Heap via `heapq`)。
-- **啟發式 (Heuristic)**: 優先處理「總長度最短」的 Presentation。
-  - 排序鍵值 (Sort Key): `(total_length, path_length, ...)`。
-  - 當總長度相同時，優先處理路徑較短的狀態。
-- **實作細節**:
-  - 這是一種 **Best-First Search**。
-  - **是否為暴力解 (Brute-force)?**
-    - 不完全是。它利用 Presentation 的長度作為指引 (Heuristic)，優先探索較短的狀態，而非盲目遍歷。
-    - 但它仍然是系統性的圖遍歷，沒有使用高深的數學剪枝。
-  - **是否保證嘗試所有路徑?**
-    - **理論上是**: 演算法不會丟棄長度較長的狀態，只是將它們在佇列中的優先級降低。如果短的路徑都是死胡同或已訪問過，它最終會回頭處理長度較長的狀態。
-    - **實務上否**: 由於 `max_nodes_to_explore` 的限制以及搜尋空間的巨大，它通常只會探索搜尋樹中極小的一部分。
-    - **無最短路徑保證**: 它可能為了維持較短的 Presentation 長度而走了很多步 (陷入局部最佳解)，而忽略了雖然暫時變長但能快速解開的路徑。
-
-* Miller-Schupp 系列 (Miller-Schupp Series)
-
-** 定義
-- **檔案**: `ac_solver/search/miller_schupp/miller_schupp.py`
-- 這是一系列用於測試 AC 猜想的 Presentations。
-- **公式**: $MS(n, w) = \langle x, y \mid x^{-1} y^n x = y^{n+1}, x = w \rangle$
-  - $n \ge 1$ 是一個整數。
-  - $w$ 是一個由 $x, y$ 組成的字 (word)，且 $x$ 的指數和 (exponent sum) 為 0。
-
-** 用途
-- 這些 Presentations 被視為 AC 猜想的潛在反例或困難實例。
-- 程式碼中的 `generate_miller_schupp_presentations` 函數負責生成這些實例。
-- 透過 `trivialize_miller_schupp_through_search` 函數，我們可以批量測試搜尋演算法 (BFS/Greedy) 在這些特定結構上的表現。
+* Miller-Schupp Series
+- Hard instances used for testing.
+- Generated via `miller_schupp.py`.
