@@ -99,3 +99,57 @@ SAE (稀疏自動編碼器) 允許我們操縱求解器的直覺。
   - `simplify_relator`: 移除相鄰的互逆元素 (如 $x x^{-1} \to \epsilon$)。
   - 支援 **Cyclical Reduction** (循環縮減)，即移除首尾互逆元素 (對應於共軛操作的簡化)。
 - **目標狀態**: `generate_trivial_states` 產生所有可能的 Trivial Presentations (如 $\langle x, y \rangle$ 及其變體)。
+
+* 搜尋演算法分析 (Search Algorithms Analysis)
+
+本專案包含兩種傳統的圖搜尋演算法，用於在不使用強化學習的情況下尋找 AC 猜想的解。
+
+** 搜尋空間的挑戰 (The Challenge of Search Space)
+- **分支因子 (Branching Factor)**: 每一步有 12 種可能的移動 (AC moves)。
+- **指數成長**: 搜尋空間隨深度呈指數成長 ($12^d$)。
+  - 深度 5: $12^5 \approx 25$ 萬個狀態。
+  - 深度 10: $12^{10} \approx 619$ 億個狀態。
+  - 深度 20: $12^{20} \approx 3.8 \times 10^{21}$ 個狀態。
+- **結論**: 雖然演算法在理論上可以遍歷所有狀態，但在實務上，對於深度較深的解，窮舉搜尋 (Exhaustive Search) 是不可行的。這也是為何需要強化學習 (RL) 或啟發式搜尋的原因。
+
+** 廣度優先搜尋 (Breadth-First Search, BFS)
+- **檔案**: `ac_solver/search/breadth_first.py`
+- **機制**: 使用 FIFO (先進先出) 佇列 (`collections.deque`)。
+- **流程**:
+  1. 將初始狀態放入佇列。
+  2. 依序取出狀態，展開所有 12 種可能的 AC 移動。
+  3. 將新發現且未重複的狀態加入佇列尾端。
+- **特性**:
+  - **最短路徑保證**: 若在搜尋限制內存在解，BFS 保證找到移動步數最少的解。
+  - **層級遍歷**: 徹底搜尋深度 $d$ 的所有狀態後，才會進入深度 $d+1$。
+  - **限制**: 由於指數成長，BFS 只能解決非常淺層的問題 (例如 5-7 步以內)。
+
+** 貪婪搜尋 (Greedy Search / Best-First Search)
+- **檔案**: `ac_solver/search/greedy.py`
+- **機制**: 使用優先佇列 (Priority Queue, Min-Heap via `heapq`)。
+- **啟發式 (Heuristic)**: 優先處理「總長度最短」的 Presentation。
+  - 排序鍵值 (Sort Key): `(total_length, path_length, ...)`。
+  - 當總長度相同時，優先處理路徑較短的狀態。
+- **實作細節**:
+  - 這是一種 **Best-First Search**。
+  - **是否為暴力解 (Brute-force)?**
+    - 不完全是。它利用 Presentation 的長度作為指引 (Heuristic)，優先探索較短的狀態，而非盲目遍歷。
+    - 但它仍然是系統性的圖遍歷，沒有使用高深的數學剪枝。
+  - **是否保證嘗試所有路徑?**
+    - **理論上是**: 演算法不會丟棄長度較長的狀態，只是將它們在佇列中的優先級降低。如果短的路徑都是死胡同或已訪問過，它最終會回頭處理長度較長的狀態。
+    - **實務上否**: 由於 `max_nodes_to_explore` 的限制以及搜尋空間的巨大，它通常只會探索搜尋樹中極小的一部分。
+    - **無最短路徑保證**: 它可能為了維持較短的 Presentation 長度而走了很多步 (陷入局部最佳解)，而忽略了雖然暫時變長但能快速解開的路徑。
+
+* Miller-Schupp 系列 (Miller-Schupp Series)
+
+** 定義
+- **檔案**: `ac_solver/search/miller_schupp/miller_schupp.py`
+- 這是一系列用於測試 AC 猜想的 Presentations。
+- **公式**: $MS(n, w) = \langle x, y \mid x^{-1} y^n x = y^{n+1}, x = w \rangle$
+  - $n \ge 1$ 是一個整數。
+  - $w$ 是一個由 $x, y$ 組成的字 (word)，且 $x$ 的指數和 (exponent sum) 為 0。
+
+** 用途
+- 這些 Presentations 被視為 AC 猜想的潛在反例或困難實例。
+- 程式碼中的 `generate_miller_schupp_presentations` 函數負責生成這些實例。
+- 透過 `trivialize_miller_schupp_through_search` 函數，我們可以批量測試搜尋演算法 (BFS/Greedy) 在這些特定結構上的表現。
