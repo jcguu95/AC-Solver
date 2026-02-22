@@ -89,3 +89,50 @@ SAE (稀疏自動編碼器) 允許引導求解器的直覺。
 * Miller-Schupp 系列
 - 用於測試的困難實例。
 - 透過 `miller_schupp.py` 生成。
+
+* Best Run?!
+
+The best run given on Wandb seems to be the following. 
+[[https://wandb.ai/shehper/AC-Solver-PPO/runs/cwwu7rce?nw=nwusershehper][ppo_lr_ppo-ffn-nodes_[512, 512]_1722577696 | AC-Solver-PPO – Weights & Biases]]
+- Start Time: August 1st, 2024 11:48:19 PM
+- Command:
+  #+begin_src sh
+  /scratch/mas1107/PPO/src/rl/ppo_lr.py \
+       --wandb-log=True \
+       --use-transformer=False \
+       --is-loss-clip=1 \
+       --norm-rewards=0 \
+       --clip-rewards=1 \
+       --nodes-counts 512 512 \
+       --override-num-envs=False \
+       --num-envs=28 \
+       --num-steps=512 \
+       --gamma=0.999 \
+       --wandb-project-name=PPO-AC-LR \
+       --anneal-lr=0 \
+       --learning-rate=3e-3 \
+       --seed=1 \
+       --total-timesteps=40000000 \
+       --states-type=all \
+       --max-env-steps=64
+  #+end_src
+
+#+begin_quote
+1. 卓越的求解效率與上限
+   + 最高成功率：該訓練在 charts/solved 指標中達到了約 330 個已解猜想 的高點，
+     屬於所有實驗中的第一梯隊。
+   + 極速收斂：相較於其他最終同樣達到高分的紀錄，此 Run 的曲線斜率更陡，意味著
+     它在更少的訓練步數（Step）內就掌握了求解邏輯。
+   + 持續下降的未解數：charts/unsolved 圖表顯示未解猜想數量穩定且持續地減少，
+     證明 AI 並非只會解簡單的問題，而是具備處理複雜案例的能力。
+2. 極佳的訓練穩定性（RL 健康度）
+   + 穩定的策略更新：losses/approx_kl 始終保持在低位且平穩，沒有出現足以導致模
+     型崩潰（Catastrophic Forgetting）的劇烈跳動。
+   + 精準的局勢判斷：losses/value_loss 在初期波動後迅速穩定，代表 AI 的「評論
+     員」模型能準確預測步數價值，為學習提供可靠的基準。
+   + 健康的探索機制：losses/entropy_loss 呈現優美的平滑下降曲線，顯示 AI 從最
+     初的隨機嘗試轉變為有把握的策略性操作，且未過早陷入局部最佳解。
+3. 優異的系統資源表現
+   + 穩定的記憶體管理：system/memory 在初期調整後趨於穩定，排除記憶體洩漏風險，
+     確保了長期訓練的可靠性。
+#+end_quote
