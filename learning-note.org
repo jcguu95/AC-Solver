@@ -116,7 +116,7 @@ The best run given on Wandb seems to be the following.
        --states-type=all \
        --max-env-steps=64
   #+end_src
-
+  
 #+begin_quote
 1. 卓越的求解效率與上限
    + 最高成功率：該訓練在 charts/solved 指標中達到了約 330 個已解猜想 的高點，
@@ -135,4 +135,24 @@ The best run given on Wandb seems to be the following.
 3. 優異的系統資源表現
    + 穩定的記憶體管理：system/memory 在初期調整後趨於穩定，排除記憶體洩漏風險，
      確保了長期訓練的可靠性。
+#+end_quote
+
+A competitor: While [[https://wandb.ai/shehper/AC-Solver-PPO/runs/v52m5gaw/overview?nw=nwusershehper][ppo_lr_ppo-ffn-nodes_[512, 512]_1722577541]] this improved
+more slowly, it eventually solved 2 more cases than the former.
+
+#+begin_quote
+### 1. 核心參數的影響
+
+ `max-env-steps` 的兩面性：雖然平均而言 64 步並非最佳設定，但目前「表現最好」的單次紀錄（Solved 數量最高）確實是由 64 步產生的。
+ 求解難度：較長的步數（64 vs 32）可能為複雜猜想提供了必要的「探索空間」，但也增加了學習的變異性（Variance）。
+
+### 2. 「最佳紀錄」的雙重標準
+
+ 極限性能 vs. 效率：您發現了兩個「贏家」：一個是進度極快、迅速達到穩定狀態的 Run；另一個則是最終多解開了 2 個案例，但需要更長時間才達到高原期的 Run。
+ 權衡取捨：這顯示了在「收斂速度」與「最終求解上限」之間的典型拉鋸。
+
+### 3. 實驗性質：試錯與統計
+
+ 隨機性（Seed）的影響：單一 Run 的成功可能源於特定的隨機種子（如 Seed 1）運氣較好。
+ 非線性關係：超參數與結果之間並非簡單的線性正相關，而是需要透過大量的經驗測試（Empirical testing）來尋找特定問題的「甜蜜點」。
 #+end_quote
